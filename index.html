@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anki CSV Builder (JP-EN) — v2</title>
+<style>
+  :root { --pad: 16px; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", Arial, sans-serif; margin: var(--pad); }
+  h1 { font-size: 22px; margin: 0 0 8px; }
+  .hint { color:#555; font-size:14px; margin-bottom: 12px; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin: 8px 0; }
+  .btn { padding:12px 16px; border:1px solid #ccc; border-radius:10px; background:#f4f4f6; cursor:pointer; font-size:16px; }
+  .btn.primary { background:#0b5fff; border-color:#0b5fff; color:#fff; }
+  .btn:active { transform: translateY(1px); }
+  textarea { width:100%; height:50vh; padding:12px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size:15px; line-height:1.5; border:1px solid #ddd; border-radius:10px; }
+  label { font-size:15px; }
+  .status { margin-top:8px; font-size:14px; color:#444; }
+  table { width:100%; border-collapse: collapse; margin-top:10px; font-size:14px; }
+  th, td { border:1px solid #eee; padding:8px; vertical-align: top; }
+  th { background:#fafafa; text-align:left; }
+  @media (min-width: 900px){
+    textarea{ height: 45vh; }
+  }
+</style>
+</head>
+<body>
+  <h1>Anki CSV Builder (JP-EN) — v2</h1>
+  <div class="hint">
+    Xuất CSV <b>7 cột, không header</b> theo thứ tự v2:<br>
+    <code>1) JP | 2) Analysis | 3) Key | 4) Word | 5) Image | 6) Meaning | 7) EN</code>.<br>
+    Dán dữ liệu → Preview → Tải CSV → Import trong Anki và map đúng 7 cột như trên.
+  </div>
+
+  <div class="row">
+    <button class="btn" id="btnExample">Dán ví dụ</button>
+    <button class="btn primary" id="btnDownload">Tải CSV</button>
+    <label><input type="checkbox" id="chkDedup" checked> Loại trùng theo Sentence (JP)</label>
+  </div>
+
+  <textarea id="input" placeholder="📖 英単語: spicy
+意味: 辛い、スパイシー
+
+[日本語文]
+すみません、この料理はもう少し辛くできますか？
+[英語文]
+Excuse me, can you make this dish a bit spicier?
+📌 キーフレーズ: [Excuse me]::すみません,[a bit spicier]::もう少し辛く
+🖼 画像キーワード: restaurant waiter spicy dish"></textarea>
+
+  <div class="row">
+    <button class="btn" id="btnPreview">Preview</button>
+    <span class="status" id="status">Số thẻ hợp lệ: 0</span>
+  </div>
+
+  <div id="preview"></div>
+
+<script>
+function normalize(text){ return (text||"").trim().replace(/\r\n/g,"\n").replace(/\r/g,"\n"); }
+
+function parseBlocks(text){
+  const t = normalize(text);
+  if(!t) return [];
+  const parts = t.split(/\n(?=\[日本語文\])/);
+  const rows = [];
+  for(const part of parts){
+    // Lấy cùng-dòng sau nhãn
+    const mWORD = part.match(/📖\s*英単語\s*[:：]?\s*(.+)/);
+    const mMEAN = part.match(/意味\s*[:：]?\s*(.+)/);
+    const mJP   = part.match(/\[日本語文\]\s*(.+)/);
+    const mEN   = part.match(/\[英語文\]\s*(.+)/);
+    const mAN   = part.match(/🔎\s*文解析\s*[:：]?\s*(.+)/);
+    const mKEY  = part.match(/📌\s*キーフレーズ\s*[:：]?\s*(.+)/);
+    const mIMG  = part.match(/🖼\s*画像キーワード\s*[:：]?\s*(.+)/);
+
+    const word = mWORD ? mWORD[1].trim() : "";
+    const mean = mMEAN ? mMEAN[1].trim() : "";
+    const jp   = mJP   ? mJP[1].trim()   : "";
+    const en   = mEN   ? mEN[1].trim()   : "";
+    const an   = mAN   ? mAN[1].trim()   : "";
+    const key  = mKEY  ? mKEY[1].trim()  : "";
+    const img  = mIMG  ? mIMG[1].trim()  : "";
+
+    // Điều kiện tối thiểu: có JP để hình thành hàng; EN/WORD/MEAN có thể trống nếu bạn chưa nhập
+    if(jp){
+      // Mapping v2 (7 cột):
+      // 1) JP | 2) Analysis | 3) Key | 4) Word | 5) Image | 6) Meaning | 7) EN
+      rows.push([jp, an, key, word, img, mean, en]);
+    }
+  }
+  return rows;
+}
+
+function toCSVNoHeader(rows){
+  const escape = (v) => {
+    const s = String(v ?? "");
+    const need = /[",\n]/.test(s);
+    const e = s.replace(/"/g, '""');
+    return need ? `"${e}"` : e;
+  };
+  return rows.map(r => r.map(escape).join(",")).join("\n");
+}
+
+function setStatus(msg){ document.getElementById("status").textContent = msg; }
+
+function renderPreview(rows){
+  const el = document.getElementById("preview");
+  if(rows.length===0){ el.innerHTML=""; return; }
+  const head = `
+    <tr>
+      <th>JP</th>
+      <th>Analysis</th>
+      <th>Key</th>
+      <th>Word</th>
+      <th>Image</th>
+      <th>Meaning</th>
+      <th>EN</th>
+    </tr>`;
+  const body = rows.slice(0,10).map(r =>
+    `<tr>${r.map(c => `<td>${c ? c.replace(/&/g,"&amp;").replace(/</g,"&lt;") : ""}</td>`).join("")}</tr>`
+  ).join("");
+  el.innerHTML = `<table>${head}${body}</table><div class="status">Hiển thị tối đa 10 dòng xem trước • Tổng: ${rows.length}</div>`;
+}
+
+function downloadCSV(filename, csvText){
+  const blob = new Blob(["\uFEFF"+csvText], {type:"text/csv;charset=utf-8;"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
+}
+
+const EXAMPLE = `📖 英単語: spicy
+意味: 辛い、スパイシー
+
+[日本語文]
+すみません、この料理はもう少し辛くできますか？
+[英語文]
+Excuse me, can you make this dish a bit spicier?
+📌 キーフレーズ: [Excuse me]::すみません,[a bit spicier]::もう少し辛く
+🖼 画像キーワード: restaurant waiter spicy dish
+
+📖 英単語: solve
+意味: 解く、解決する
+
+[日本語文]
+明日のテストのために、この問題を一緒に解きませんか？
+[英語文]
+Shall we solve this problem together for tomorrow's test?
+📌 キーフレーズ: [Shall we ~ ?]::一緒に〜しませんか？
+🖼 画像キーワード: school desk students textbook`;
+
+const $input = document.getElementById("input");
+const $chk = document.getElementById("chkDedup");
+
+function currentRows(){
+  let rows = parseBlocks($input.value);
+  if($chk.checked){
+    const seen = new Set();
+    rows = rows.filter(r=>{
+      if(seen.has(r[0])) return false; // r[0] = JP
+      seen.add(r[0]); return true;
+    });
+  }
+  return rows;
+}
+
+document.getElementById("btnExample").addEventListener("click", ()=>{
+  $input.value = EXAMPLE;
+  const rows = currentRows();
+  setStatus(`Số thẻ hợp lệ: ${rows.length}`);
+  renderPreview(rows);
+});
+
+document.getElementById("btnPreview").addEventListener("click", ()=>{
+  const rows = currentRows();
+  if(rows.length===0){
+    alert("Chưa tìm thấy thẻ hợp lệ. Mỗi block nên có ít nhất [日本語文].");
+  }
+  setStatus(`Số thẻ hợp lệ: ${rows.length}`);
+  renderPreview(rows);
+});
+
+document.getElementById("btnDownload").addEventListener("click", ()=>{
+  const rows = currentRows();
+  if(rows.length===0){
+    alert("Không có thẻ hợp lệ để xuất.");
+    return;
+  }
+  const csv = toCSVNoHeader(rows);
+  downloadCSV("anki_cards_v2.csv", csv);
+});
+
+// cập nhật đếm nhanh khi nhập
+$input.addEventListener("input", ()=>{
+  const rows = currentRows();
+  setStatus(`Số thẻ hợp lệ: ${rows.length}`);
+});
+</script>
+</body>
+</html>
