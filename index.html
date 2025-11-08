@@ -2,243 +2,45 @@
 <html lang="vi" translate="no">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="google" content="notranslate">
-<title>Anki CSV Builder (JP-EN) — v2 fixed</title>
-<style>
-  :root { --pad: 16px; }
-  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", Arial, sans-serif; margin: var(--pad); }
-  h1 { font-size: 22px; margin: 0 0 8px; }
-  .hint { color:#555; font-size:14px; margin-bottom: 12px; }
-  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin: 8px 0; }
-  .btn { padding:12px 16px; border:1px solid #ccc; border-radius:10px; background:#f4f4f6; cursor:pointer; font-size:16px; }
-  .btn.primary { background:#0b5fff; border-color:#0b5fff; color:#fff; }
-  .btn:active { transform: translateY(1px); }
-  textarea { width:100%; height:50vh; padding:12px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size:15px; line-height:1.5; border:1px solid #ddd; border-radius:10px; }
-  label { font-size:15px; }
-  .status { margin-top:8px; font-size:14px; color:#444; }
-  table { width:100%; border-collapse: collapse; margin-top:10px; font-size:14px; }
-  th, td { border:1px solid #eee; padding:8px; vertical-align: top; }
-  th { background:#fafafa; text-align:left; }
-  .notranslate{ translate: no; }
-  @media (min-width: 900px){
-    textarea{ height: 45vh; }
-  }
-</style>
+<title>Anki CSV Builder (JP-EN)</title>
 </head>
 <body>
-  <h1>Anki CSV Builder (JP-EN)</h1>
-  <div class="hint">
-    Xuất CSV <b>7 cột, không header</b> theo map cố định:<br>
-    <code>1) JP | 2) Analysis | 3) Key | 4) Word | 5) (empty) | 6) Meaning | 7) EN</code><br>
-    Bỏ qua: <code>🖼 画像キーワード</code>, <code>🧩 コロケーション例</code>.  
-    Cắt block theo: <code>=== Word #...</code> hoặc <code>📖 英単語</code> hoặc <code>[日本語文]</code> (để input của bạn không bị dính block).
-  </div>
-
-  <div class="row">
-    <button class="btn" id="btnExample">Dán ví dụ</button>
-    <button class="btn primary" id="btnDownload">Tải CSV</button>
-    <label><input type="checkbox" id="chkDedup" checked> Loại trùng theo Sentence (JP)</label>
-  </div>
-
-  <textarea id="input" placeholder="Dán input theo format bạn đã gửi (có === Word #... ===, ⸻, v.v.)"></textarea>
-
-  <div class="row">
-    <button class="btn" id="btnPreview">Preview</button>
-    <span class="status" id="status">Số thẻ hợp lệ: 0</span>
-  </div>
-
-  <div id="preview" class="notranslate"></div>
-
+<textarea id="input" style="width:100%;height:50vh;"></textarea>
+<button id="run">Tải CSV</button>
 <script>
-function normalize(text){ return (text||"").trim().replace(/\r\n/g,"\n").replace(/\r/g,"\n"); }
-
-// --- CẮT BLOCK: mở block khi gặp "=== Word", hoặc 📖 英単語, hoặc [日本語文]
+function normalize(t){return (t||"").trim().replace(/\r\n/g,"\n").replace(/\r/g,"\n")}
 function splitBlocks(t){
-  // dùng m flag để ^ khớp đầu dòng
-  return t.split(/\n(?=(?:===\s*Word\s*#|\s*📖\s*英単語|\s*\[日本語文\]))/m).filter(Boolean);
+  // chỉ mở block ở === Word... hoặc 📖 英単語
+  return t.split(/\n(?=(?:===\s*Word\s*#|\s*📖\s*英単語))/m).filter(Boolean)
 }
-
-function parseBlocks(text){
-  const t = normalize(text);
-  if(!t) return [];
-  const parts = splitBlocks(t);
-  const rows = [];
-  for(const part of parts){
-    // regex cùng-dòng, đúng phong cách code cũ
-    const mWORD = part.match(/📖\s*英単語\s*[:：]?\s*(.+)/);
-    const mMEAN = part.match(/意味\s*[:：]?\s*(.+)/);
-    const mJP   = part.match(/\[日本語文\]\s*(.+)/);
-    const mEN   = part.match(/\[英語文\]\s*(.+)/);
-    const mAN   = part.match(/🔎\s*文解析\s*[:：]?\s*(.+)/);
-    const mKEY  = part.match(/📌\s*キーフレーズ\s*[:：]?\s*(.+)/);
-    // BỎ QUA: 画像/コロケーション
-
-    const word = mWORD ? mWORD[1].trim() : "";
-    const mean = mMEAN ? mMEAN[1].trim() : "";
-    const jp   = mJP   ? mJP[1].trim()   : "";
-    const en   = mEN   ? mEN[1].trim()   : "";
-    const an   = mAN   ? mAN[1].trim()   : "";
-    const key  = mKEY  ? mKEY[1].trim()  : "";
-
-    // ép đủ bộ để tránh hàng sai map
-    if(jp && en && word && mean){
-      // Map v2: 1) JP | 2) Analysis | 3) Key | 4) Word | 5) (empty) | 6) Meaning | 7) EN
-      rows.push([jp, an, key, word, "", mean, en]);
-    }
+function parseBlocks(t){
+  const parts=splitBlocks(normalize(t)),rows=[]
+  for(const p of parts){
+    const jp=(p.match(/\[日本語文\]\s*(.+)/)||[])[1]||""
+    const en=(p.match(/\[英語文\]\s*(.+)/)||[])[1]||""
+    const key=(p.match(/📌\s*キーフレーズ\s*[:：]?\s*(.+)/)||[])[1]||""
+    const word=(p.match(/📖\s*英単語\s*[:：]?\s*(.+)/)||[])[1]||""
+    const mean=(p.match(/意味\s*[:：]?\s*(.+)/)||[])[1]||""
+    const an=(p.match(/🔎\s*文解析\s*[:：]?\s*(.+)/)||[])[1]||""
+    if(jp&&en&&word&&mean)
+      rows.push([jp.trim(),an.trim(),key.trim(),word.trim(),"",mean.trim(),en.trim()])
   }
-  return rows;
+  return rows
 }
-
-function toCSVNoHeader(rows){
-  const escape = (v) => {
-    const s = String(v ?? "");
-    const need = /[",\n]/.test(s);
-    const e = s.replace(/"/g, '""');
-    return need ? `"${e}"` : e;
-  };
-  return rows.map(r => r.map(escape).join(",")).join("\n");
+function toCSV(rows){
+  const esc=v=>/["\n,]/.test(v)?`"${v.replace(/"/g,'""')}"`:v
+  return rows.map(r=>r.map(esc).join(",")).join("\n")
 }
-
-function setStatus(msg){ document.getElementById("status").textContent = msg; }
-
-function renderPreview(rows){
-  const el = document.getElementById("preview");
-  if(rows.length===0){ el.innerHTML=""; return; }
-
-  const table = document.createElement("table");
-  table.innerHTML = `
-    <tr>
-      <th>JP</th>
-      <th>Analysis</th>
-      <th>Key</th>
-      <th>Word</th>
-      <th>(empty)</th>
-      <th>Meaning</th>
-      <th>EN</th>
-    </tr>`;
-
-  rows.slice(0,10).forEach(r=>{
-    const tr = document.createElement("tr");
-    r.forEach(c=>{
-      const td = document.createElement("td");
-      td.textContent = c || ""; // tránh &quot; ở preview
-      tr.appendChild(td);
-    });
-    table.appendChild(tr);
-  });
-
-  el.innerHTML = "";
-  el.appendChild(table);
-  const info = document.createElement("div");
-  info.className = "status";
-  info.textContent = `Hiển thị tối đa 10 dòng xem trước • Tổng: ${rows.length}`;
-  el.appendChild(info);
+document.getElementById("run").onclick=()=>{
+  const txt=document.getElementById("input").value
+  const csv="\uFEFF"+toCSV(parseBlocks(txt))
+  const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"})
+  const a=document.createElement("a")
+  a.href=URL.createObjectURL(blob)
+  a.download="anki_cards.csv"
+  a.click()
 }
-
-function downloadCSV(filename, csvText){
-  const blob = new Blob(["\uFEFF"+csvText], {type:"text/csv;charset=utf-8;"});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
-}
-
-// --- ví dụ đúng theo INPUT bạn gửi
-const EXAMPLE = `=== Word #1 ===
-
-📖 英単語: borrow
-意味: 借りる（お金や物を人から一時的に受け取る）
-
-[日本語文]
-昨日、彼からお金を少し借りました。
-[英語文]
-I borrowed some money from him yesterday.
-
-📌 キーフレーズ:💡 :: 「borrow A from B」で「BからAを借りる」。反対の「lend」は「AをBに貸す」。
-🖼 画像キーワード: wallet, cash, friend, lending, coins
-🧩 コロケーション例: borrow money, borrow a book, borrow time
-
-⸻
-
-=== Word #2 ===
-
-📖 英単語: invite
-意味: 招待する（人を食事・イベントなどに呼ぶ）
-
-[日本語文]
-彼は私を彼の誕生日パーティーに招待しました。
-[英語文]
-He invited me to his birthday party.
-
-📌 キーフレーズ:💡 :: 「invite 人 to 場所／イベント」構文。「invite for」は使わない！
-🖼 画像キーワード: birthday party, friends, balloons, cake, invitation card
-🧩 コロケーション例: invite someone to dinner, invite guests, invite friends
-
-⸻
-
-=== Word #3 ===
-
-📖 英単語: decide
-意味: 決める（選択肢の中から何かを選ぶ）
-
-[日本語文]
-私はどの大学に行くか決めなければなりません。
-[英語文]
-I have to decide which university to go to.
-
-📌 キーフレーズ:💡 :: 「decide to 動詞」＝「〜することを決める」。「decide on 名詞」もよく使う。
-🖼 画像キーワード: university, student, decision, thinking, future
-🧩 コロケーション例: decide to go, decide on a plan, decide quickly`;
-
-const $input = document.getElementById("input");
-const $chk = document.getElementById("chkDedup");
-
-function currentRows(){
-  let rows = parseBlocks($input.value);
-  if($chk.checked){
-    const seen = new Set();
-    rows = rows.filter(r=>{
-      if(seen.has(r[0])) return false; // r[0] = JP
-      seen.add(r[0]); return true;
-    });
-  }
-  return rows;
-}
-
-document.getElementById("btnExample").addEventListener("click", ()=>{
-  $input.value = EXAMPLE;
-  const rows = currentRows();
-  setStatus(`Số thẻ hợp lệ: ${rows.length}`);
-  renderPreview(rows);
-});
-
-document.getElementById("btnPreview").addEventListener("click", ()=>{
-  const rows = currentRows();
-  if(rows.length===0){
-    alert("Chưa tìm thấy thẻ hợp lệ. Mỗi block cần có: 英単語 / 意味 / [日本語文] / [英語文].");
-  }
-  setStatus(`Số thẻ hợp lệ: ${rows.length}`);
-  renderPreview(rows);
-});
-
-document.getElementById("btnDownload").addEventListener("click", ()=>{
-  const rows = currentRows();
-  if(rows.length===0){
-    alert("Không có thẻ hợp lệ để xuất.");
-    return;
-  }
-  const csv = toCSVNoHeader(rows);
-  downloadCSV("anki_cards_v2.csv", csv);
-});
-
-// cập nhật đếm nhanh khi nhập
-$input.addEventListener("input", ()=>{
-  const rows = currentRows();
-  setStatus(`Số thẻ hợp lệ: ${rows.length}`);
-});
 </script>
 </body>
 </html>
