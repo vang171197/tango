@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Anki CSV Builder (JP-EN) — v2</title>
+<title>Anki CSV Builder (JP-EN) — v2 map cố định</title>
 <style>
   :root { --pad: 16px; }
   body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", Arial, sans-serif; margin: var(--pad); }
@@ -25,11 +25,12 @@
 </style>
 </head>
 <body>
-  <h1>Anki CSV Builder (JP-EN) — v2</h1>
+  <h1>Anki tango</h1>
   <div class="hint">
-    Xuất CSV <b>7 cột, không header</b> theo thứ tự v2:<br>
-    <code>1) JP | 2) Analysis | 3) Key | 4) Word | 5) Image | 6) Meaning | 7) EN</code>.<br>
-    Dán dữ liệu → Preview → Tải CSV → Import trong Anki và map đúng 7 cột như trên.
+    Xuất CSV <b>7 cột, không header</b> theo map cố định:<br>
+    <code>1) JP | 2) Analysis | 3) Key | 4) Word | 5) (empty) | 6) Meaning | 7) EN</code><br>
+    Bỏ qua: <code>🖼 画像キーワード</code>, <code>🧩 コロケーション例</code>.<br>
+    Dán dữ liệu → Preview → Tải CSV → Import và map đúng 7 cột trên trong Anki.
   </div>
 
   <div class="row">
@@ -46,7 +47,8 @@
 [英語文]
 Excuse me, can you make this dish a bit spicier?
 📌 キーフレーズ: [Excuse me]::すみません,[a bit spicier]::もう少し辛く
-🖼 画像キーワード: restaurant waiter spicy dish"></textarea>
+🖼 画像キーワード: restaurant waiter spicy dish
+🧩 コロケーション例: (bỏ qua)"></textarea>
 
   <div class="row">
     <button class="btn" id="btnPreview">Preview</button>
@@ -61,17 +63,20 @@ function normalize(text){ return (text||"").trim().replace(/\r\n/g,"\n").replace
 function parseBlocks(text){
   const t = normalize(text);
   if(!t) return [];
+  // Giữ cách cắt CŨ: tách theo dòng bắt đầu bằng [日本語文]
   const parts = t.split(/\n(?=\[日本語文\])/);
   const rows = [];
   for(const part of parts){
-    // Lấy cùng-dòng sau nhãn
+    // Giữ phong cách CŨ: regex cùng-dòng
     const mWORD = part.match(/📖\s*英単語\s*[:：]?\s*(.+)/);
     const mMEAN = part.match(/意味\s*[:：]?\s*(.+)/);
     const mJP   = part.match(/\[日本語文\]\s*(.+)/);
     const mEN   = part.match(/\[英語文\]\s*(.+)/);
     const mAN   = part.match(/🔎\s*文解析\s*[:：]?\s*(.+)/);
     const mKEY  = part.match(/📌\s*キーフレーズ\s*[:：]?\s*(.+)/);
-    const mIMG  = part.match(/🖼\s*画像キーワード\s*[:：]?\s*(.+)/);
+    // Bỏ qua ảnh/collocation theo yêu cầu
+    // const mIMG  = part.match(/🖼\s*画像キーワード\s*[:：]?\s*(.+)/);
+    // const mCOL  = part.match(/🧩\s*コロケーション例\s*[:：]?\s*(.+)/);
 
     const word = mWORD ? mWORD[1].trim() : "";
     const mean = mMEAN ? mMEAN[1].trim() : "";
@@ -79,13 +84,14 @@ function parseBlocks(text){
     const en   = mEN   ? mEN[1].trim()   : "";
     const an   = mAN   ? mAN[1].trim()   : "";
     const key  = mKEY  ? mKEY[1].trim()  : "";
-    const img  = mIMG  ? mIMG[1].trim()  : "";
+    // const img  = ""; // bỏ qua
+    // const col  = ""; // bỏ qua
 
-    // Điều kiện tối thiểu: có JP để hình thành hàng; EN/WORD/MEAN có thể trống nếu bạn chưa nhập
+    // Giữ logic CŨ: chỉ cần có JP là push (EN/WORD/MEAN có thể trống)
     if(jp){
-      // Mapping v2 (7 cột):
-      // 1) JP | 2) Analysis | 3) Key | 4) Word | 5) Image | 6) Meaning | 7) EN
-      rows.push([jp, an, key, word, img, mean, en]);
+      // MAP MỚI (7 cột):
+      // 1) JP | 2) Analysis | 3) Key | 4) Word | 5) (empty) | 6) Meaning | 7) EN
+      rows.push([jp, an, key, word, "", mean, en]);
     }
   }
   return rows;
@@ -112,7 +118,7 @@ function renderPreview(rows){
       <th>Analysis</th>
       <th>Key</th>
       <th>Word</th>
-      <th>Image</th>
+      <th>(empty)</th>
       <th>Meaning</th>
       <th>EN</th>
     </tr>`;
@@ -123,6 +129,7 @@ function renderPreview(rows){
 }
 
 function downloadCSV(filename, csvText){
+  // UTF-8 BOM để Excel/Anki hiểu Unicode
   const blob = new Blob(["\uFEFF"+csvText], {type:"text/csv;charset=utf-8;"});
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -141,6 +148,7 @@ const EXAMPLE = `📖 英単語: spicy
 Excuse me, can you make this dish a bit spicier?
 📌 キーフレーズ: [Excuse me]::すみません,[a bit spicier]::もう少し辛く
 🖼 画像キーワード: restaurant waiter spicy dish
+🧩 コロケーション例: (bỏ qua)
 
 📖 英単語: solve
 意味: 解く、解決する
