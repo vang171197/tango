@@ -3,59 +3,151 @@
 <head>
 <meta charset="utf-8">
 <meta name="google" content="notranslate">
-<title>Anki CSV Builder (JP-EN)</title>
+<title>Anki CSV Builder (JP-EN v3)</title>
 <style>
-body { font-family: system-ui, sans-serif; margin:20px; }
-textarea { width:100%; height:50vh; font-family: ui-monospace, monospace; font-size:15px; }
-button { padding:10px 16px; margin:10px 5px 20px 0; font-size:16px; }
+body{font-family:system-ui,sans-serif;margin:20px;}
+h2{margin-bottom:4px;}
+textarea{width:100%;height:50vh;font-family:ui-monospace,monospace;font-size:15px;padding:10px;}
+button{padding:10px 16px;margin:10px 6px 10px 0;font-size:16px;}
+.status{font-size:14px;color:#333;margin-top:6px;}
+table{width:100%;border-collapse:collapse;margin-top:10px;font-size:14px;}
+th,td{border:1px solid #ddd;padding:6px 8px;vertical-align:top;}
+th{background:#f5f5f5;}
 </style>
 </head>
 <body>
 <h2>Anki CSV Builder (JP-EN)</h2>
-<p>Map cố định: 1) JP | 2) Analysis | 3) Key | 4) Word | 5) (empty) | 6) Meaning | 7) EN</p>
+<p>Map cố định: <b>1) JP | 2) Analysis | 3) Key | 4) Word | 5) (empty) | 6) Meaning | 7) EN</b><br>
+Bỏ qua: 🖼 画像キーワード, 🧩 コロケーション例</p>
 
-<textarea id="input" placeholder="Dán dữ liệu tại đây..."></textarea><br>
-<button id="run">Tải CSV</button>
+<button id="btnExample">📋 Dán ví dụ</button>
+<button id="btnPreview">🔍 Preview</button>
+<button id="btnDownload">💾 Tải CSV</button>
+<label><input type="checkbox" id="chkDedup" checked> Loại trùng theo JP</label>
+<div class="status" id="status">Số thẻ hợp lệ: 0</div>
+
+<textarea id="input" placeholder="Dán nội dung theo format === Word #... === tại đây..."></textarea>
+<div id="preview"></div>
 
 <script>
 function normalize(t){return (t||"").trim().replace(/\r\n/g,"\n").replace(/\r/g,"\n");}
 
-// --- Chia block theo === Word #... === hoặc 📖 英単語 ---
+// --- cắt block: chỉ theo === Word #... === hoặc 📖 英単語 ---
 function splitBlocks(t){
   return t.split(/\n(?=(?:===\s*Word\s*#|📖\s*英単語))/m).filter(Boolean);
 }
 
-// --- Phân tích từng block ---
 function parseBlocks(t){
-  const parts = splitBlocks(normalize(t));
-  const rows = [];
+  const parts=splitBlocks(normalize(t));
+  const rows=[];
   for(const p of parts){
-    const word = (p.match(/📖\s*英単語\s*[:：]?\s*(.+)/)||[])[1] || "";
-    const mean = (p.match(/意味\s*[:：]?\s*(.+)/)||[])[1] || "";
-    const jp   = (p.match(/\[日本語文\]\s*(.+)/)||[])[1] || "";
-    const en   = (p.match(/\[英語文\]\s*(.+)/)||[])[1] || "";
-    const an   = (p.match(/🔎\s*文解析\s*[:：]?\s*(.+)/)||[])[1] || "";
-    const key  = (p.match(/📌\s*キーフレーズ\s*[:：]?\s*(.+)/)||[])[1] || "";
-    // bỏ qua ảnh và collocation
-
+    const word=(p.match(/📖\s*英単語\s*[:：]?\s*(.+)/)||[])[1]||"";
+    const mean=(p.match(/意味\s*[:：]?\s*(.+)/)||[])[1]||"";
+    const jp=(p.match(/\[日本語文\]\s*(.+)/)||[])[1]||"";
+    const en=(p.match(/\[英語文\]\s*(.+)/)||[])[1]||"";
+    const an=(p.match(/🔎\s*文解析\s*[:：]?\s*(.+)/)||[])[1]||"";
+    const key=(p.match(/📌\s*キーフレーズ\s*[:：]?\s*(.+)/)||[])[1]||"";
     if(jp && en && word && mean){
-      // map: 1) JP | 2) Analysis | 3) Key | 4) Word | 5) empty | 6) Meaning | 7) EN
       rows.push([jp.trim(), an.trim(), key.trim(), word.trim(), "", mean.trim(), en.trim()]);
     }
   }
   return rows;
 }
 
-// --- Xuất CSV ---
 function toCSV(rows){
   const esc=v=>/["\n,]/.test(v)?`"${v.replace(/"/g,'""')}"`:v;
   return rows.map(r=>r.map(esc).join(",")).join("\n");
 }
 
-document.getElementById("run").onclick=()=>{
-  const txt=document.getElementById("input").value;
-  const rows=parseBlocks(txt);
-  if(!rows.length){alert("Không tìm thấy thẻ hợp lệ.");return;}
+function renderPreview(rows){
+  const el=document.getElementById("preview");
+  if(!rows.length){el.innerHTML="";return;}
+  let html="<table><tr><th>JP</th><th>Analysis</th><th>Key</th><th>Word</th><th>(empty)</th><th>Meaning</th><th>EN</th></tr>";
+  for(const r of rows.slice(0,10)){
+    html+="<tr>"+r.map(c=>`<td>${c?c.replace(/&/g,"&amp;").replace(/</g,"&lt;"):""}</td>`).join("")+"</tr>";
+  }
+  html+="</table><div class='status'>Hiển thị tối đa 10 dòng xem trước • Tổng: "+rows.length+"</div>";
+  el.innerHTML=html;
+}
+
+function setStatus(msg){document.getElementById("status").textContent=msg;}
+
+function currentRows(){
+  let rows=parseBlocks(document.getElementById("input").value);
+  if(document.getElementById("chkDedup").checked){
+    const seen=new Set();
+    rows=rows.filter(r=>{
+      if(seen.has(r[0]))return false;
+      seen.add(r[0]);
+      return true;
+    });
+  }
+  return rows;
+}
+
+// --- ví dụ mẫu ---
+const EXAMPLE=`=== Word #1 ===
+
+📖 英単語: borrow
+意味: 借りる（お金や物を人から一時的に受け取る）
+
+[日本語文]
+昨日、彼からお金を少し借りました。
+[英語文]
+I borrowed some money from him yesterday.
+
+📌 キーフレーズ:💡 :: 「borrow A from B」で「BからAを借りる」。反対の「lend」は「AをBに貸す」。
+🖼 画像キーワード: wallet, cash, friend, lending, coins
+🧩 コロケーション例: borrow money, borrow a book, borrow time
+
+⸻
+
+=== Word #2 ===
+
+📖 英単語: invite
+意味: 招待する（人を食事・イベントなどに呼ぶ）
+
+[日本語文]
+彼は私を彼の誕生日パーティーに招待しました。
+[英語文]
+He invited me to his birthday party.
+
+📌 キーフレーズ:💡 :: 「invite 人 to 場所／イベント」構文。「invite for」は使わない！
+🖼 画像キーワード: birthday party, friends, balloons, cake, invitation card
+🧩 コロケーション例: invite someone to dinner, invite guests, invite friends
+
+⸻
+
+=== Word #3 ===
+
+📖 英単語: decide
+意味: 決める（選択肢の中から何かを選ぶ）
+
+[日本語文]
+私はどの大学に行くか決めなければなりません。
+[英語文]
+I have to decide which university to go to.
+
+📌 キーフレーズ:💡 :: 「decide to 動詞」＝「〜することを決める」。「decide on 名詞」もよく使う。
+🖼 画像キーワード: university, student, decision, thinking, future
+🧩 コロケーション例: decide to go, decide on a plan, decide quickly`;
+
+document.getElementById("btnExample").onclick=()=>{
+  document.getElementById("input").value=EXAMPLE;
+  const rows=currentRows();
+  setStatus("Số thẻ hợp lệ: "+rows.length);
+  renderPreview(rows);
+};
+
+document.getElementById("btnPreview").onclick=()=>{
+  const rows=currentRows();
+  setStatus("Số thẻ hợp lệ: "+rows.length);
+  renderPreview(rows);
+};
+
+document.getElementById("btnDownload").onclick=()=>{
+  const rows=currentRows();
+  if(!rows.length){alert("Không có thẻ hợp lệ để xuất.");return;}
   const csv="\uFEFF"+toCSV(rows);
   const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
   const a=document.createElement("a");
