@@ -38,21 +38,70 @@ function splitBlocks(t){
 }
 
 function parseBlocks(t){
-  const parts=splitBlocks(normalize(t));
-  const rows=[];
-  for(const p of parts){
-    const word=(p.match(/📖\s*英単語\s*[:：]?\s*(.+)/)||[])[1]||"";
-    const mean=(p.match(/意味\s*[:：]?\s*(.+)/)||[])[1]||"";
-    const jp=(p.match(/\[日本語文\]\s*(.+)/)||[])[1]||"";
-    const en=(p.match(/\[英語文\]\s*(.+)/)||[])[1]||"";
-    const an=(p.match(/🔎\s*文解析\s*[:：]?\s*(.+)/)||[])[1]||"";
-    const key=(p.match(/📌\s*キーフレーズ\s*[:：]?\s*(.+)/)||[])[1]||"";
-    if(jp && en && word && mean){
-      rows.push([jp.trim(), an.trim(), key.trim(), word.trim(), "", mean.trim(), en.trim()]);
+  const parts = splitBlocks(normalize(t));
+  const rows = [];
+
+  // lấy 1 dòng sau một "header" (header ở 1 dòng riêng)
+  function nextLineAfter(block, headerRe){
+    const m = block.match(new RegExp(headerRe.source + String.raw`\s*\n\s*([^\n]+)`, headerRe.flags));
+    return (m && m[1]) ? m[1].trim() : "";
+  }
+
+  // lấy value sau nhãn trên cùng 1 dòng: "Label: value"
+  function inlineAfter(block, labelRe){
+    const m = block.match(new RegExp(labelRe.source + String.raw`\s*[:：]\s*([^\n]+)`, labelRe.flags));
+    return (m && m[1]) ? m[1].trim() : "";
+  }
+
+  for (const p of parts){
+    // 📖 Từ vựng tiếng Anh: worry :: /.../ :: ...
+    // -> lấy "worry" (phần trước ::)
+    let wordLine = inlineAfter(p, /📖\s*Từ vựng tiếng Anh/i);
+    let word = "";
+    let wordExtra = "";
+    if (wordLine){
+      const segs = wordLine.split("::").map(s => s.trim()).filter(Boolean);
+      word = segs[0] || "";
+      // phần còn lại (IPA/romaji kiểu VN) đưa vào analysis cho tiện tra lại
+      wordExtra = segs.slice(1).join(" :: ");
+    }
+
+    // Nghĩa: lo lắng
+    const mean = inlineAfter(p, /Nghĩa/i);
+
+    // VN / EN: câu nằm ở dòng kế tiếp
+    const vn = nextLineAfter(p, /\[🇻🇳\s*Câu tiếng Việt\]/);
+    let enLine = nextLineAfter(p, /\[🇺🇸\s*Câu tiếng Anh\]/);
+
+    // EN có thể có ":: phiên âm" -> tách ra
+    let en = "";
+    let enPron = "";
+    if (enLine){
+      const segs = enLine.split("::").map(s => s.trim());
+      en = segs[0] || "";
+      enPron = segs.slice(1).join(" :: ").trim();
+    }
+
+    // Key phrase: "📌 Key phrase 💡 :: ..."
+    // chấp nhận có/không 💡, có/không ::
+    let key = "";
+    const keyM = p.match(/📌\s*Key phrase(?:\s*💡)?\s*(?:::\s*|[:：]\s*)?([^\n]+)/i);
+    if (keyM && keyM[1]) key = keyM[1].trim();
+
+    // Analysis: gom phiên âm từ dòng word + phiên âm EN (nếu có)
+    // (Bạn có thể đổi ý: nhét enPron vào Key cũng được, nhưng analysis hợp lý hơn)
+    let an = [wordExtra, enPron].filter(Boolean).join(" | ");
+
+    // Map cố định cũ: 1) JP | 2) Analysis | 3) Key | 4) Word | 5) empty | 6) Meaning | 7) EN
+    // Với format mới: cột 1 sẽ là VN
+    if (vn && en && word && mean){
+      rows.push([vn, an, key, word, "", mean, en]);
     }
   }
+
   return rows;
 }
+
 
 function toCSV(rows){
   const esc=v=>/["\n,]/.test(v)?`"${v.replace(/"/g,'""')}"`:v;
